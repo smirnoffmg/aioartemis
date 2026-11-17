@@ -1,6 +1,5 @@
-# API Reference
+# API reference
 
-::: pypi_package_uv_template
+::: aioartemis
     options:
       show_root_heading: true
-      members: true

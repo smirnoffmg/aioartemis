@@ -1,0 +1,16 @@
+# Two independent Artemis nodes for running the examples:
+#   docker compose -f examples/docker-compose.yml up -d
+# They are not clustered: a message sent to one node can only be consumed there.
+services:
+  artemis-1:
+    image: apache/activemq-artemis:2.44.0
+    ports: ["5672:5672", "8161:8161"]
+    environment:
+      ARTEMIS_USER: artemis
+      ARTEMIS_PASSWORD: artemis
+  artemis-2:
+    image: apache/activemq-artemis:2.44.0
+    ports: ["5673:5672", "8162:8161"]
+    environment:
+      ARTEMIS_USER: artemis
+      ARTEMIS_PASSWORD: artemis

@@ -1,9 +1,15 @@
-site_name: pypi-package-uv-template
-site_description: Add your description here
-site_url: https://github.com/owner/pypi-package-uv-template
+site_name: aioartemis
+site_description: asyncio AMQP 1.0 client for ActiveMQ Artemis with failover across nodes
+site_url: https://smirnoffmg.github.io/aioartemis/
+repo_url: https://github.com/smirnoffmg/aioartemis
 
 theme:
   name: material
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.superfences  # fenced code inside admonitions
 
 plugins:
   - search
@@ -12,8 +18,18 @@ plugins:
         python:
           paths: [src]
           options:
-            show_source: true
+            docstring_style: google
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            show_if_no_docstring: true
+            members_order: source
+            show_source: false
+            filters: ["!^_", "!^__all__$", "!^__version__$"]
 
 nav:
-  - Home: index.md
-  - API: api.md
+  - Getting started: index.md
+  - Delivery guarantees: guarantees.md
+  - Failover and load balancers: failover.md
+  - Errors: errors.md
+  - API reference: api.md

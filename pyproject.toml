@@ -3,45 +3,104 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pypi-package-uv-template"
+name = "aioartemis"
 version = "0.1.0"
-description = "Add your description here"
+description = "asyncio AMQP 1.0 client for ActiveMQ Artemis with failover across nodes"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "python-qpid-proton>=0.41.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+aioartemis = ["py.typed"]
 
 [dependency-groups]
 dev = [
     "ruff",
     "mypy",
+    "import-linter",
     "pytest",
+    "pytest-asyncio",
     "pytest-cov",
+    "testcontainers",
     "pre-commit",
     "mkdocs",
     "mkdocs-material",
     "mkdocstrings[python]",
+    "litestar>=2.25.0",
+    "uvicorn>=0.54.0",
+    "pyright>=1.1.414",
 ]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 88
+line-length = 110
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
-ignore = []
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "SIM",      # simplify
+    "ASYNC",    # asyncio pitfalls
+    "PT",       # pytest style
+    "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests poll state owned by another thread or by the broker; there is no event to await.
+"tests/**" = ["ASYNC110"]
 
 [tool.mypy]
 python_version = "3.12"
-warn_return_any = true
-warn_unused_ignores = true
-disallow_untyped_defs = false
-packages = ["src/pypi_package_uv_template"]
+strict = true
+files = ["src", "tests", "examples"]
+mypy_path = ["src", "tests"]
+warn_unreachable = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v"
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: needs Docker to run ActiveMQ Artemis",
+]
+
+[tool.importlinter]
+root_package = "aioartemis"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "asyncio API is built on top of the proton engine, never the other way round"
+type = "layers"
+layers = [
+    "aioartemis.client",
+    "aioartemis._engine",
+    "aioartemis._policy | aioartemis.errors",
+]
+
+[[tool.importlinter.contracts]]
+# The engine runs on the proton thread; touching asyncio objects there is a
+# cross-thread bug. Results go back only through the Outcome callbacks.
+name = "proton engine does not use asyncio"
+type = "forbidden"
+source_modules = ["aioartemis._engine"]
+forbidden_modules = ["asyncio"]
+
+[tool.pyright]
+# mypy is the main type checker; pyright runs alongside it because it ships a
+# newer typeshed and reports deprecations (the same ones Pylance shows).
+include = ["src", "tests", "examples"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportDeprecated = "error"
