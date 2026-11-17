@@ -43,10 +43,11 @@ async def test_node_that_drops_every_connection_is_backed_off() -> None:
 
 
 async def test_connection_dropped_right_after_first_open_does_not_fail_startup() -> None:
+    # The client may catch the first connection between its open and its close and
+    # legitimately return from __aenter__ then; it must never return disconnected.
     with fake_peer(close_with="amqp:internal-error", close_after=0.0) as peer:
         async with Client([url_of(peer)], connect_timeout=10) as client:
             assert client.is_connected
-        assert peer.connections >= 2
 
 
 async def test_startup_timeout_reports_the_last_error() -> None:
