@@ -25,7 +25,7 @@ apt-get install build-essential pkg-config libssl-dev
 ```
 
 Without the OpenSSL headers it still installs, silently without TLS. See
-[Installation](https://smirnoffmg.github.io/aioartemis/#installation) for other systems and how to check.
+[Installation](https://smirnoffmg.dev/aioartemis/#installation) for other systems and how to check.
 
 ## Usage
 
@@ -51,14 +51,14 @@ asyncio.run(main())
 
 ## Documentation
 
-<https://smirnoffmg.github.io/aioartemis/>
+<https://smirnoffmg.dev/aioartemis/>
 
-- [Delivery guarantees](https://smirnoffmg.github.io/aioartemis/guarantees/): duplicates, ordering,
+- [Delivery guarantees](https://smirnoffmg.dev/aioartemis/guarantees/): duplicates, ordering,
   settling messages
-- [Failover and load balancers](https://smirnoffmg.github.io/aioartemis/failover/): reconnects, backoff,
+- [Failover and load balancers](https://smirnoffmg.dev/aioartemis/failover/): reconnects, backoff,
   limitations
-- [Errors](https://smirnoffmg.github.io/aioartemis/errors/): what every exception means
-- [API reference](https://smirnoffmg.github.io/aioartemis/api/)
+- [Errors](https://smirnoffmg.dev/aioartemis/errors/): what every exception means
+- [API reference](https://smirnoffmg.dev/aioartemis/api/)
 
 ## Examples
 

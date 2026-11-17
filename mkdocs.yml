@@ -1,6 +1,6 @@
 site_name: aioartemis
 site_description: asyncio AMQP 1.0 client for ActiveMQ Artemis with failover across nodes
-site_url: https://smirnoffmg.github.io/aioartemis/
+site_url: https://smirnoffmg.dev/aioartemis/
 repo_url: https://github.com/smirnoffmg/aioartemis
 
 theme:
