@@ -1,5 +1,9 @@
 # aioartemis
 
+[![CI](https://github.com/smirnoffmg/aioartemis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/smirnoffmg/aioartemis/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/aioartemis)](https://pypi.org/project/aioartemis/)
+[![Python](https://img.shields.io/pypi/pyversions/aioartemis)](https://pypi.org/project/aioartemis/)
+
 asyncio-native AMQP 1.0 client for [ActiveMQ Artemis](https://activemq.apache.org/components/artemis/),
 built for running behind load balancers and failing over between nodes.
 
