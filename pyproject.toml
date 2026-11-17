@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]  # PEP 639 license expressions
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,9 +8,29 @@ version = "0.1.0"
 description = "asyncio AMQP 1.0 client for ActiveMQ Artemis with failover across nodes"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Maksim Smirnov", email = "smirnoffmg@gmail.com" }]
+keywords = ["activemq", "artemis", "amqp", "amqp-1.0", "asyncio", "messaging", "qpid-proton"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Typing :: Typed",
+]
 dependencies = [
     "python-qpid-proton>=0.41.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/smirnoffmg/aioartemis"
+Documentation = "https://smirnoffmg.dev/aioartemis/"
+Repository = "https://github.com/smirnoffmg/aioartemis"
+Issues = "https://github.com/smirnoffmg/aioartemis/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

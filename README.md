@@ -62,9 +62,13 @@ asyncio.run(main())
 
 ## Examples
 
-[examples/](examples/) has runnable scripts for retrying ambiguous sends, an idempotent consumer, graceful
+[examples/](https://github.com/smirnoffmg/aioartemis/tree/main/examples) has runnable scripts for retrying ambiguous sends, an idempotent consumer, graceful
 shutdown, failover and topics, with a Docker Compose file for two local nodes.
+
+## License
+
+Apache License 2.0, see [LICENSE](https://github.com/smirnoffmg/aioartemis/blob/main/LICENSE).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/smirnoffmg/aioartemis/blob/main/CONTRIBUTING.md).
