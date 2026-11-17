@@ -49,8 +49,9 @@ can build in one stage and run in a slimmer one.
 
 ```python
 import asyncio
+from contextlib import suppress
 
-from aioartemis import Client
+from aioartemis import Client, DeliveryLost
 
 
 async def main() -> None:
@@ -61,7 +62,10 @@ async def main() -> None:
         async with client.subscribe("orders", prefetch=10) as orders:
             async for message in orders:
                 print(message.body)
-                await message.accept()
+                # The connection dropped since the message arrived: the broker
+                # redelivers it, so there is nothing left to settle.
+                with suppress(DeliveryLost):
+                    await message.accept()
 
 
 asyncio.run(main())
@@ -76,6 +80,10 @@ you call one of its four settling methods:
 | `nack()` | processing failed, it may work later | redelivers it, counting a failed attempt |
 | `release()` | you did not process it, e.g. on shutdown | redelivers it, counting nothing |
 | `reject()` | the message can never be processed | moves it to the dead-letter address at once |
+
+All four raise `DeliveryLost` when the connection the message came over has dropped since. The broker
+then redelivers the message, so a consumer loop should carry on, as above, instead of letting the error
+end the subscription.
 
 ## Next
 

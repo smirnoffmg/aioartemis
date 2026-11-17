@@ -33,7 +33,7 @@ from litestar.exceptions import NotFoundException
 from litestar.params import FromPath, JSONBody
 from litestar.status_codes import HTTP_202_ACCEPTED, HTTP_503_SERVICE_UNAVAILABLE
 
-from aioartemis import ArtemisError, Client, ConnectionLost
+from aioartemis import ArtemisError, Client, ConnectionLost, DeliveryLost
 
 URLS = os.environ.get("ARTEMIS_URLS", "amqp://localhost:5672,amqp://localhost:5673").split(",")
 USER = os.environ.get("ARTEMIS_USER", "artemis")
@@ -54,7 +54,8 @@ async def consume_orders(client: Client, processed: dict[str, dict[str, Any]]) -
         async for message in orders:
             order = message.body
             processed[order["id"]] = order  # keyed by id: a redelivered order changes nothing
-            await message.accept()
+            with suppress(DeliveryLost):  # the connection dropped; the broker redelivers it
+                await message.accept()
 
 
 @asynccontextmanager

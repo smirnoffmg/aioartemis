@@ -33,6 +33,19 @@ On the consumer side, record the ids of processed messages in the same transacti
 processing them, and skip a message whose id is already recorded. Messages from other producers may have
 no `message_id` (`None`); deduplicate those by a business key instead.
 
+Artemis itself does not deduplicate by `message_id`: two sends with the same id are two messages. Its
+[duplicate detection](https://activemq.apache.org/components/artemis/documentation/latest/duplicate-detection.html)
+keys on the `_AMQ_DUPL_ID` application property instead. The broker accepts a resend carrying an id it has
+already seen and drops it:
+
+```python
+await client.send("orders", order, message_id=order["id"], properties={"_AMQ_DUPL_ID": order["id"]})
+```
+
+The broker remembers a bounded number of ids per address (`id-cache-size`, 20,000 by default), so this
+narrows the window for duplicates from retried sends; it does not replace deduplication by consumers,
+which also covers redeliveries.
+
 ## Ordering
 
 Order is not guaranteed. A redelivered message arrives after messages that were sent later, and
@@ -57,6 +70,21 @@ A received message stays unsettled until you call one of:
 | `nack()` | processing failed, may succeed later | redelivered; after `max-delivery-attempts` failures moved to the dead-letter address | incremented |
 | `release()` | not processed, e.g. shutting down | redelivered | unchanged |
 | `reject()` | can never be processed | moved to the dead-letter address at once (dropped if none is configured) | — |
+
+If the connection the message came over has dropped since, these raise `DeliveryLost`: the broker
+redelivers the message, possibly to another consumer, so there is nothing left to settle. Catch it in a
+consumer loop, or the error ends the loop and the subscription with it:
+
+```python
+from contextlib import suppress
+
+from aioartemis import DeliveryLost
+
+async for message in orders:
+    process(message.body)
+    with suppress(DeliveryLost):
+        await message.accept()
+```
 
 `delivery_count` is the number of earlier deliveries that failed. Use `nack()` for failures: a message
 that is only ever `release()`d is redelivered forever and never reaches the dead-letter address.

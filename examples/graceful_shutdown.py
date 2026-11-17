@@ -9,8 +9,9 @@ returns them to the broker.
 import asyncio
 import os
 import signal
+from contextlib import suppress
 
-from aioartemis import Client, Subscription
+from aioartemis import Client, DeliveryLost, Subscription
 
 URLS = os.environ.get("ARTEMIS_URLS", "amqp://localhost:5672,amqp://localhost:5673").split(",")
 USER = os.environ.get("ARTEMIS_USER", "artemis")
@@ -26,9 +27,12 @@ async def consume(jobs: Subscription) -> None:
             await asyncio.sleep(1)  # the actual work
         except asyncio.CancelledError:
             print("interrupted, releasing", message.body)
-            await message.release()
+            with suppress(DeliveryLost):
+                await message.release()
             raise
-        await message.accept()
+        # DeliveryLost: the connection dropped while working; the broker redelivers the job.
+        with suppress(DeliveryLost):
+            await message.accept()
         print("done", message.body)
 
 

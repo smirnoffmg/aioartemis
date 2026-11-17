@@ -114,3 +114,12 @@ async def test_refused_subscribe_raises_instead_of_waiting_forever() -> None:
             async with asyncio.timeout(5), client.subscribe("present"):
                 pass
             assert client.is_connected
+
+
+async def test_unresolvable_node_is_skipped_like_an_unreachable_one() -> None:
+    with fake_peer() as peer:
+        urls = ["amqp://no-such-node.invalid:5672", url_of(peer)]
+        async with Client(urls, shuffle=False, connect_timeout=10) as client:
+            assert client.connected_url == url_of(peer)
+            assert "no-such-node.invalid" in (client.last_error or "")
+            await asyncio.wait_for(client.send("q", "x"), 5)

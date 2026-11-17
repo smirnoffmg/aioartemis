@@ -35,8 +35,9 @@ Without the OpenSSL headers it still installs, silently without TLS. See
 
 ```python
 import asyncio
+from contextlib import suppress
 
-from aioartemis import Client
+from aioartemis import Client, DeliveryLost
 
 
 async def main() -> None:
@@ -47,7 +48,10 @@ async def main() -> None:
         async with client.subscribe("orders", prefetch=10) as orders:
             async for message in orders:
                 print(message.body)
-                await message.accept()
+                # The connection dropped since the message arrived: the broker
+                # redelivers it, so there is nothing left to settle.
+                with suppress(DeliveryLost):
+                    await message.accept()
 
 
 asyncio.run(main())

@@ -13,6 +13,7 @@ import os
 import queue
 import random
 import threading
+import time
 import uuid
 from collections import deque
 from collections.abc import Callable
@@ -21,11 +22,19 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from proton import Condition, Connection, Data, Delivery, Event, Handler, Link, Message, symbol
+from proton._handlers import ConnectionBoundEvent
 from proton._reactor import Task
-from proton.handlers import MessagingHandler
+from proton.handlers import IOHandler, MessagingHandler
 from proton.reactor import ApplicationEvent, Container, EventInjector, LinkOption
 
-from ._policy import Attempts, after_failed_attempt, after_lost_connection, backoff_delay, credit_to_grant
+from ._policy import (
+    Attempts,
+    after_failed_attempt,
+    after_lost_connection,
+    backoff_delay,
+    credit_to_grant,
+    refused_login_is_fatal,
+)
 from .errors import (
     AuthenticationFailed,
     ClientClosed,
@@ -72,6 +81,7 @@ class EngineConfig:
     close_timeout: float
     reconnect_base: float
     reconnect_max: float
+    auth_retry_window: float | None = None
 
 
 class Listener(Protocol):
@@ -133,6 +143,22 @@ class _Routing(LinkOption):
         terminus.capabilities.exit()
 
 
+class _IOHandler(IOHandler):
+    """Proton resolves the host name on its own thread and lets a resolution error
+    escape the event loop, which kills it. Close the transport instead, as proton
+    does for a refused connection, so the reconnect loop moves on to the next node."""
+
+    def on_connection_bound(self, event: ConnectionBoundEvent) -> None:
+        try:
+            super().on_connection_bound(event)
+        except OSError as exc:
+            transport = event.transport
+            transport._selectable = None  # read by IOHandler.on_transport_closed
+            transport.condition = Condition("proton.pythonio", f"Connection error: {exc}")
+            transport.close_tail()
+            transport.close_head()
+
+
 class _Timer(Handler):
     def __init__(self, callback: Callable[[], None]) -> None:
         self._callback = callback
@@ -157,6 +183,7 @@ class Engine(MessagingHandler):
         self._injector_released = False
         self._commands: queue.SimpleQueue[tuple[Callable[[], None], Outcome | None]] = queue.SimpleQueue()
         self._container: Container | None = None
+        self._started = time.monotonic()
 
         self._connection: Connection | None = None
         self._connected_url: str | None = None
@@ -198,6 +225,9 @@ class Engine(MessagingHandler):
             self._injector_released = True
             for fd in self._injector.pipe:
                 os.close(fd)
+
+    def new_container(self) -> Container:
+        return Container(self, global_handler=_IOHandler())
 
     # -- commands -----------------------------------------------------------------
 
@@ -378,9 +408,9 @@ class Engine(MessagingHandler):
         message: Message = event.message
         owner.deliver(
             Received(
-                body=message.body,
-                properties=dict(message.properties or {}),
-                message_id=message.id,
+                body=owned(message.body),
+                properties=owned(dict(message.properties or {})),
+                message_id=owned(message.id),
                 delivery_count=message.delivery_count,
                 subscription_id=owner.id,
                 delivery_id=delivery_id,
@@ -422,14 +452,15 @@ class Engine(MessagingHandler):
         if condition is not None:
             reason = f"{reason}: {_describe(condition)}"
         if condition is not None and condition.name in _FATAL_CONDITIONS:
-            if self._epoch == 0:
-                # Wrong credentials before we ever got in: retrying cannot help.
+            if refused_login_is_fatal(
+                ever_connected=self._epoch > 0,
+                elapsed=time.monotonic() - self._started,
+                retry_window=self._config.auth_retry_window,
+            ):
                 self._fatal = AuthenticationFailed(_describe(condition))
                 self._fail_everything(self._fatal)
                 self._listener.fatal(self._fatal)
             else:
-                # Once we have logged in, a node refusing us is a misconfigured node,
-                # not broken credentials, and is failed over like any other.
                 log.warning("%s refused the credentials: %s", self._attempts.url, _describe(condition))
         if self._closing or self._fatal is not None:
             self._stop()
@@ -600,6 +631,18 @@ class Engine(MessagingHandler):
     def _cancel(task: Task | None) -> None:
         if task is not None:
             task.cancel()
+
+
+def owned(value: Any) -> Any:
+    """Copy binary values out of proton: it decodes them as memoryviews over the
+    message's own buffer, which is freed once on_message returns."""
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, dict):
+        return {owned(k): owned(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [owned(v) for v in value]
+    return value
 
 
 def _detached(exc: BaseException) -> BaseException:

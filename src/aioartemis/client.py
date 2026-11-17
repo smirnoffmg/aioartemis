@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from proton import SSL, Message
-from proton.reactor import Container
 
 from ._engine import Engine, EngineConfig, PendingSend, Received, Routing, Settlement, _Subscription
 from .errors import ArtemisError, ClientClosed, EngineFailed
@@ -188,6 +187,11 @@ class Client:
         reconnect_max: Cap of the backoff, in seconds. A connection must also
             stay up this long before the backoff resets.
         shuffle: Shuffle `urls` once per client, to spread clients over nodes.
+        auth_retry_window: Seconds after start during which a refused first login
+            is retried like an unreachable node, for brokers whose authentication
+            backend (LDAP, ...) refuses valid credentials while it restarts.
+            `None` raises `AuthenticationFailed` at the first refusal. Once
+            logged in, a refusal is always failed over.
 
     Raises:
         ValueError: `urls` is empty.
@@ -208,6 +212,7 @@ class Client:
         reconnect_base: float = 0.1,
         reconnect_max: float = 10.0,
         shuffle: bool = True,
+        auth_retry_window: float | None = None,
     ) -> None:
         if not urls:
             raise ValueError("at least one url is required")
@@ -228,6 +233,7 @@ class Client:
             close_timeout=close_timeout,
             reconnect_base=reconnect_base,
             reconnect_max=reconnect_max,
+            auth_retry_window=auth_retry_window,
         )
         self._shuffle = shuffle
         self._connect_timeout = connect_timeout
@@ -268,7 +274,8 @@ class Client:
         Raises:
             TimeoutError: No node could be reached within `connect_timeout`; the
                 message includes the last error.
-            AuthenticationFailed: The credentials were refused.
+            AuthenticationFailed: The credentials were refused, and kept being
+                refused for `auth_retry_window` if one is set.
             ClientClosed: `aclose` was called while connecting.
             RuntimeError: The client was already entered once.
         """
@@ -350,7 +357,9 @@ class Client:
             body: The AMQP body: `str`, `bytes`, `dict`, `list`, numbers, ...
             properties: AMQP application properties.
             message_id: Id for consumers to deduplicate by; a UUID by default.
-                Pass the same id when retrying after `ConnectionLost`.
+                Pass the same id when retrying after `ConnectionLost`. Artemis
+                itself does not deduplicate by it: for that, also set the
+                `_AMQ_DUPL_ID` property.
             durable: Ask the broker to persist the message.
             routing: `"queue"` (anycast) or `"topic"` (multicast). Decides how
                 Artemis auto-creates the address.
@@ -487,7 +496,7 @@ class Client:
 
     def _run(self, engine: Engine) -> None:
         loop = self._running_loop()
-        container = Container(engine)
+        container = engine.new_container()
         try:
             container.run()
         except BaseException as exc:

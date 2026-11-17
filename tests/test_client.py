@@ -322,3 +322,44 @@ async def test_message_nacked_too_often_goes_to_the_dead_letter_queue(queue_name
         await dead.accept()
 
     assert attempts == 10, "Artemis' default max-delivery-attempts"
+
+
+async def test_binary_values_arrive_intact(queue_name: str, node_b: Node) -> None:
+    expected = [f"payload-{i}".encode() for i in range(20)]
+    async with (
+        Client([node_b.url], **CREDENTIALS) as client,
+        client.subscribe(queue_name, prefetch=20) as sub,
+    ):
+        for body in expected:
+            await client.send(queue_name, body, properties={"raw": b"\x00\x01"})
+        # Read only after all of them arrived: by then proton has freed and reused
+        # the buffers of the first ones.
+        received = [await asyncio.wait_for(sub.get(), 5) for _ in expected]
+        for msg in received:
+            await msg.accept()
+
+    assert [msg.body for msg in received] == expected
+    assert all(type(msg.body) is bytes for msg in received)
+    assert all(msg.properties == {"raw": b"\x00\x01"} for msg in received)
+
+
+async def test_broker_drops_a_resend_carrying_the_same_duplicate_id(queue_name: str, node_b: Node) -> None:
+    async with Client([node_b.url], **CREDENTIALS) as client, client.subscribe(queue_name) as sub:
+        for body in ("first", "resent"):
+            await client.send(queue_name, body, properties={"_AMQ_DUPL_ID": "order-42"})
+        first = await asyncio.wait_for(sub.get(), 5)
+        await first.accept()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(sub.get(), 1)
+
+    assert first.body == "first"
+
+
+async def test_refused_first_login_is_retried_within_the_auth_retry_window(node_b: Node) -> None:
+    started = asyncio.get_running_loop().time()
+    with pytest.raises(AuthenticationFailed):
+        async with Client(
+            [node_b.url], user="artemis", password="wrong", auth_retry_window=2.0, connect_timeout=30
+        ):
+            pass
+    assert asyncio.get_running_loop().time() - started >= 2.0

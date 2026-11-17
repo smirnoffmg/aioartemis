@@ -14,7 +14,17 @@ def failover_order(urls: list[str], start: int) -> list[str]:
 def backoff_delay(round_: int, *, base: float, cap: float, rand: Callable[[], float]) -> float:
     """Full jitter, including the first round: clients that lost the same node
     spread their retries out instead of stampeding the next one in lockstep."""
-    return rand() * min(cap, base * 2.0**round_)
+    # The round grows for as long as every node is down; 2.0**1024 overflows a float.
+    return rand() * min(cap, base * 2.0 ** min(round_, 64))
+
+
+def refused_login_is_fatal(*, ever_connected: bool, elapsed: float, retry_window: float | None) -> bool:
+    """A refused first login means wrong credentials, unless the application asked
+    to ride out an authentication backend that refuses everyone for a while.
+    Once logged in, a node refusing us is a misconfigured node, failed over."""
+    if ever_connected:
+        return False
+    return retry_window is None or elapsed >= retry_window
 
 
 @dataclass(frozen=True)

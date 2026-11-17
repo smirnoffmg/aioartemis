@@ -11,6 +11,9 @@ The client treats any of these as a lost connection and moves on to another node
 - the broker closes the connection, whatever the reason it gives;
 - a node does not finish opening the connection within `open_timeout` seconds.
 
+A node whose host name does not resolve, or whose port refuses connections, is a failed attempt like
+any other: the client records it in `last_error` and tries the next node.
+
 After reconnecting it re-attaches every sender and every subscription. A subscription that the broker
 itself detached, for example because the address was deleted, has already failed with `LinkRefused` and
 is not re-attached.
@@ -34,6 +37,11 @@ raises `AuthenticationFailed`, even when other nodes would have accepted them: r
 credentials cannot help. After a successful login, a node that refuses the credentials is treated as a
 misconfigured node: the client logs a warning and fails over past it, trying it again in later passes.
 
+A broker that authenticates against LDAP or another backend may refuse valid credentials while that
+backend restarts. To ride this out at startup, pass `auth_retry_window`: for that many seconds after the
+client starts, a refused first login is retried like an unreachable node, and only then raises
+`AuthenticationFailed`.
+
 ## Behind a load balancer
 
 - Keep `heartbeat` well below the load balancer's idle timeout, so that idle connections are not cut.
@@ -44,8 +52,10 @@ misconfigured node: the client logs a warning and fails over past it, trying it 
 
 ## Limitations
 
-- `amqps://` URLs use proton's default TLS settings; the CA, a client certificate and SNI cannot be
-  configured yet. Over plain `amqp://` the password is sent in clear text.
+- `amqps://` URLs verify the broker's certificate chain against OpenSSL's default trust store (which
+  honours `SSL_CERT_FILE` and `SSL_CERT_DIR`) and its host name against the URL; the host name is also
+  sent as SNI. A client certificate and a CA file passed in code cannot be configured yet. Over plain
+  `amqp://` the password is sent in clear text.
 - Host names are resolved on the client's engine thread, which blocks it, timers included, until the
   resolver answers.
 - A sender link is kept for every address the client has sent to, for as long as the client lives.

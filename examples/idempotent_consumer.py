@@ -12,9 +12,11 @@ and skipped. The example also shows the settling methods:
 import asyncio
 import os
 import sqlite3
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from typing import Any
 
-from aioartemis import Client, IncomingMessage
+from aioartemis import Client, DeliveryLost, IncomingMessage
 
 URLS = os.environ.get("ARTEMIS_URLS", "amqp://localhost:5672,amqp://localhost:5673").split(",")
 USER = os.environ.get("ARTEMIS_USER", "artemis")
@@ -74,17 +76,22 @@ async def consume(client: Client, db: sqlite3.Connection) -> None:
                 message = await asyncio.wait_for(deposits.get(), timeout=3)
             except TimeoutError:
                 return  # nothing left to do
+            settle: Callable[[], Awaitable[None]]
             try:
                 applied = apply(db, message)
             except InvalidMessage as error:
                 print("reject", message.message_id, error)
-                await message.reject()
+                settle = message.reject
             except TemporaryFailure as error:
                 print("nack", message.message_id, error, "delivery_count", message.delivery_count)
-                await message.nack()
+                settle = message.nack
             else:
                 print("accept", message.message_id, "applied" if applied else "duplicate, skipped")
-                await message.accept()
+                settle = message.accept
+            # If the connection dropped since the message arrived, the broker redelivers
+            # it, and apply() skips it as a duplicate once its effect is committed.
+            with suppress(DeliveryLost):
+                await settle()
 
 
 async def main() -> None:
