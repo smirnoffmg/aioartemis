@@ -5,7 +5,7 @@ from contextlib import suppress
 
 import pytest
 
-from aioartemis import Client, ClientClosed, EngineFailed, LinkRefused
+from aioartemis import Client, ClientClosed, EngineFailed, LinkRefused, SendBacklogFull
 from fake_peer import fake_peer, free_port, url_of
 
 
@@ -123,3 +123,27 @@ async def test_unresolvable_node_is_skipped_like_an_unreachable_one() -> None:
             assert client.connected_url == url_of(peer)
             assert "no-such-node.invalid" in (client.last_error or "")
             await asyncio.wait_for(client.send("q", "x"), 5)
+
+
+async def test_send_beyond_the_backlog_limit_fails_at_once() -> None:
+    with fake_peer(credit=0) as peer:
+        async with Client([url_of(peer)], max_pending_sends=2) as client:
+            waiting = [asyncio.create_task(client.send("q", n)) for n in range(2)]
+            await asyncio.sleep(0.2)
+            with pytest.raises(SendBacklogFull):
+                await asyncio.wait_for(client.send("q", "one too many"), 1)
+            assert not any(task.done() for task in waiting)
+
+            waiting[0].cancel()
+            with suppress(asyncio.CancelledError):
+                await waiting[0]
+            third = asyncio.create_task(client.send("q", "fits again"))
+            await asyncio.sleep(0.2)
+            assert not third.done(), "a cancelled send must free its place in the backlog"
+            third.cancel()
+            waiting[1].cancel()
+
+
+def test_backlog_limit_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="max_pending_sends"):
+        Client(["amqp://a:5672"], max_pending_sends=0)

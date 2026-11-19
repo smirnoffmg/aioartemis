@@ -198,6 +198,24 @@ async def test_node_refusing_credentials_during_failover_is_skipped(
         assert client.connected_url == node_a.url
 
 
+async def test_credentials_revoked_on_every_node_fail_the_client(queue_name: str, node_a: Node) -> None:
+    async with Client([node_a.url], heartbeat=1.0, open_timeout=2.0, **CREDENTIALS) as client:
+        await client.send(queue_name, "warm-up")
+        node_a.revoke_credentials()
+        node_a.pause()
+        try:
+            async with asyncio.timeout(10):
+                while client.is_connected:
+                    await asyncio.sleep(0.05)
+            # Artemis keeps accepting a cached login for security-invalidation-interval (10 s).
+            await asyncio.sleep(11)
+        finally:
+            node_a.unpause()
+
+        with pytest.raises(AuthenticationFailed):
+            await asyncio.wait_for(client.send(queue_name, "never sent"), 15)
+
+
 async def test_in_flight_send_fails_with_its_message_id(queue_name: str, node_a: Node) -> None:
     async with Client([node_a.url], heartbeat=1.0, **CREDENTIALS) as client:
         await client.send(queue_name, "warm-up")

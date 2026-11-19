@@ -9,6 +9,7 @@ from .errors import (
     DeliveryLost,
     EngineFailed,
     LinkRefused,
+    SendBacklogFull,
     SendRejected,
     SendReleased,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "EngineFailed",
     "IncomingMessage",
     "LinkRefused",
+    "SendBacklogFull",
     "SendRejected",
     "SendReleased",
     "Subscription",

@@ -28,7 +28,9 @@ class FakePeer(MessagingHandler):
     seconds after they open: only the first one, or every one when
     ``close_every`` is set (a node that keeps dropping clients). ``refuse``
     lists addresses whose links are refused the way Artemis does it: an
-    attach without a terminus, then a detach carrying the error.
+    attach without a terminus, then a detach carrying the error. ``credit``
+    is how many messages a client may send before it waits; 0 holds every
+    send in the client's backlog.
     """
 
     def __init__(
@@ -39,8 +41,9 @@ class FakePeer(MessagingHandler):
         close_after: float = 0.3,
         close_every: bool = False,
         refuse: frozenset[str] = frozenset(),
+        credit: int = 10,
     ) -> None:
-        super().__init__(prefetch=10)
+        super().__init__(prefetch=credit)
         self._injector = EventInjector()
         self.url = url
         self.connections = 0

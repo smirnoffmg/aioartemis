@@ -12,7 +12,8 @@ exceptions instead, so `except ArtemisError` does not catch them; they are liste
 | `SendReleased` | `send` | The broker did not take the message. | Safe to send again. |
 | `LinkRefused` | `send`, `subscribe`, `Subscription.get` | The broker refused or detached the link for the address, e.g. it does not exist or access is denied. | For `send`: the next call tries a new link. A subscription is not re-attached: subscribe again once the cause is fixed. |
 | `DeliveryLost` | `accept`, `nack`, `release`, `reject` | The message was already settled, or the connection or subscription it came over is gone. | Nothing: the broker redelivers it. Catch it in a consumer loop, or it ends the subscription. |
-| `AuthenticationFailed` | `async with Client(...)` | The credentials were refused before the client ever logged in, and kept being refused for `auth_retry_window` if one is set. | Fix the credentials; the client cannot be used. |
+| `SendBacklogFull` | `send` | `max_pending_sends` sends are already waiting for the broker, usually because no node is reachable. Nothing was sent. | Send it again later, or shed the load. |
+| `AuthenticationFailed` | `async with Client(...)`; after a login, any call and subscriptions | The credentials were refused before the client ever logged in, or after it by every node, and kept being refused for `auth_retry_window` if one is set. | Fix the credentials; the client cannot be used. |
 | `ClientClosed` | any call after `aclose`; pending sends and subscriptions when the client closes; `async with Client(...)` interrupted by `aclose` | The client is closed. | Use a new client. |
 | `EngineFailed` | any call | The engine thread died of an unexpected error, logged on the `aioartemis` logger. | Use a new client and report the bug. |
 
@@ -22,7 +23,7 @@ exceptions instead, so `except ArtemisError` does not catch them; they are liste
 | --- | --- | --- |
 | `TimeoutError` | `async with Client(...)` | No node could be reached within `connect_timeout`; the message includes the last error. |
 | `TypeError` | `send` | AMQP cannot encode the body. |
-| `ValueError` | `Client(...)`, `subscribe` | `urls` is empty, or `prefetch` is below 1. |
+| `ValueError` | `Client(...)`, `subscribe` | `urls` is empty, `max_pending_sends` or `prefetch` is below 1. |
 | `RuntimeError` | `async with Client(...)`, any call | The client was entered twice, or used before being entered. |
 | `RuntimeError` | `Client(...)` | An `amqps://` URL was given, but python-qpid-proton was built without OpenSSL; see [Installation](index.md#installation). |
 

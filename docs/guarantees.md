@@ -56,9 +56,11 @@ competing consumers of one queue interleave.
 `send()` returns once the broker has **accepted** the message. If the broker refuses it, `send()` raises
 `SendRejected`; if the broker does not take it, `SendReleased`. See [Errors](errors.md).
 
-While no node is reachable, sends wait in a local queue and go out once the client has reconnected. The
-queue is not bounded; cancel the call, e.g. with `asyncio.timeout`, to give up on a message. Cancelling
-does not recall a message that has already been handed to the broker.
+While no node is reachable, sends wait in a local queue and go out once the client has reconnected. At
+most `max_pending_sends` sends (10,000 by default) wait for the broker at once, queued or already handed
+over; one more raises `SendBacklogFull` at once, without sending anything. Cancel a call, e.g. with
+`asyncio.timeout`, to give up on a message. Cancelling does not recall a message that has already been
+handed to the broker.
 
 ## Settling received messages
 

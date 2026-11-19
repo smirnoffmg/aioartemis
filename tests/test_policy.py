@@ -70,14 +70,40 @@ def test_backoff_never_overflows_however_long_every_node_stays_down() -> None:
     assert backoff_delay(10_000, base=0.1, cap=10.0, rand=lambda: 1.0) == pytest.approx(10.0)
 
 
-def test_refused_login_after_the_first_connection_is_never_fatal() -> None:
-    assert not refused_login_is_fatal(ever_connected=True, elapsed=0.0, retry_window=None)
+def test_refused_login_after_the_first_connection_is_failed_over_while_a_node_may_accept() -> None:
+    assert not refused_login_is_fatal(
+        ever_connected=True, refused_by_every_node=False, elapsed=1000.0, retry_window=None
+    )
+
+
+def test_refused_login_by_every_node_after_the_first_connection_is_fatal() -> None:
+    # Revoked or rotated credentials: retrying them forever would hang every send.
+    assert refused_login_is_fatal(
+        ever_connected=True, refused_by_every_node=True, elapsed=0.0, retry_window=None
+    )
+
+
+@pytest.mark.parametrize(("elapsed", "fatal"), [(29.9, False), (30.0, True)])
+def test_refusal_by_every_node_is_ridden_out_within_the_window(elapsed: float, fatal: bool) -> None:
+    assert (
+        refused_login_is_fatal(
+            ever_connected=True, refused_by_every_node=True, elapsed=elapsed, retry_window=30.0
+        )
+        is fatal
+    )
 
 
 def test_refused_first_login_is_fatal_at_once_by_default() -> None:
-    assert refused_login_is_fatal(ever_connected=False, elapsed=0.0, retry_window=None)
+    assert refused_login_is_fatal(
+        ever_connected=False, refused_by_every_node=False, elapsed=0.0, retry_window=None
+    )
 
 
 @pytest.mark.parametrize(("elapsed", "fatal"), [(0.0, False), (29.9, False), (30.0, True), (31.0, True)])
 def test_refused_first_login_is_retried_within_the_window(elapsed: float, fatal: bool) -> None:
-    assert refused_login_is_fatal(ever_connected=False, elapsed=elapsed, retry_window=30.0) is fatal
+    assert (
+        refused_login_is_fatal(
+            ever_connected=False, refused_by_every_node=False, elapsed=elapsed, retry_window=30.0
+        )
+        is fatal
+    )

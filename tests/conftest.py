@@ -28,6 +28,7 @@ class Node:
     kill: Callable[[], None]
     pause: Callable[[], None]
     unpause: Callable[[], None]
+    revoke_credentials: Callable[[], None]
 
 
 async def wait_until_up(url: str, credentials: Credentials) -> None:
@@ -61,7 +62,22 @@ def start_node(credentials: Credentials = CREDENTIALS) -> Iterator[Node]:
         url = f"amqp://{host}:{container.get_exposed_port(AMQP_PORT)}"
         asyncio.run(wait_until_up(url, credentials))
         wrapped = container.get_wrapped_container()
-        yield Node(url=url, stop=wrapped.stop, kill=kill, pause=wrapped.pause, unpause=wrapped.unpause)
+
+        def revoke_credentials() -> None:
+            # login.config has reload=true: the broker rereads the file on the next login.
+            users = "/var/lib/artemis-instance/etc/artemis-users.properties"
+            revoked = f"echo '{credentials['user']} = revoked' > {users}"
+            exit_code, output = container.exec(["sh", "-c", revoked])
+            assert exit_code == 0, output
+
+        yield Node(
+            url=url,
+            stop=wrapped.stop,
+            kill=kill,
+            pause=wrapped.pause,
+            unpause=wrapped.unpause,
+            revoke_credentials=revoke_credentials,
+        )
     finally:
         kill()
 

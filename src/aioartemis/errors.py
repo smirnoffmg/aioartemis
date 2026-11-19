@@ -40,6 +40,14 @@ class SendReleased(ArtemisError):
     to send it again."""
 
 
+class SendBacklogFull(ArtemisError):
+    """`max_pending_sends` sends are already waiting for the broker, typically
+    because no node is reachable; this one was not queued, so nothing was sent.
+
+    Send it again later, or shed the load.
+    """
+
+
 class LinkRefused(ArtemisError):
     """The broker refused or detached the link for an address, for example because
     the address does not exist or access is denied.
@@ -57,11 +65,13 @@ class DeliveryLost(ArtemisError):
 
 
 class AuthenticationFailed(ArtemisError):
-    """The credentials were refused before the client ever logged in.
+    """The credentials were refused, and kept being refused for `auth_retry_window`
+    if one is set: before the client ever logged in, or after it by every node.
 
-    Raised by `async with Client(...)`; the client cannot be used afterwards. A
-    node that refuses the credentials after a successful login is treated as a
-    failed node instead and the client fails over past it.
+    Raised by `async with Client(...)` and, after a login, by every pending and
+    later call and by subscriptions; the client cannot be used afterwards. While
+    some node has not refused the credentials since the last login, a refusing
+    node is treated as a failed node instead and the client fails over past it.
     """
 
 

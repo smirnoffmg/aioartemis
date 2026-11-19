@@ -34,13 +34,21 @@ is not re-attached.
 
 If the credentials are refused before the client has ever logged in, entering `async with Client(...)`
 raises `AuthenticationFailed`, even when other nodes would have accepted them: retrying the same
-credentials cannot help. After a successful login, a node that refuses the credentials is treated as a
-misconfigured node: the client logs a warning and fails over past it, trying it again in later passes.
+credentials cannot help.
+
+After a successful login, a node that refuses the credentials is treated as a misconfigured node: the
+client logs a warning and fails over past it, trying it again in later passes. Once **every** node has
+refused them since the last login, the credentials were revoked or rotated: the client fails with
+`AuthenticationFailed`, which pending and later sends raise and subscriptions end with, instead of
+retrying for ever. A node that cannot be reached does not count as a refusal.
 
 A broker that authenticates against LDAP or another backend may refuse valid credentials while that
-backend restarts. To ride this out at startup, pass `auth_retry_window`: for that many seconds after the
-client starts, a refused first login is retried like an unreachable node, and only then raises
-`AuthenticationFailed`.
+backend restarts. To ride this out, pass `auth_retry_window`: refused credentials are retried like an
+unreachable node for that many seconds, counted from the start before the first login and from the
+first refusal after it, and only then raise `AuthenticationFailed`.
+
+Artemis caches a successful login for `security-invalidation-interval` (10 seconds by default), so a
+node may keep accepting revoked credentials for that long.
 
 ## Behind a load balancer
 

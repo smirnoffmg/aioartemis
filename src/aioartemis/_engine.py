@@ -197,6 +197,9 @@ class Engine(MessagingHandler):
         self._epoch = 0
         self._closing = False
         self._fatal: BaseException | None = None
+        # Nodes that refused the credentials since the last login, and since when.
+        self._refused_by: set[str] = set()
+        self._refused_since: float | None = None
 
         self._senders: dict[tuple[str, Routing], _Sender] = {}
         self._subscriptions: dict[int, _Subscription] = {}
@@ -327,6 +330,8 @@ class Engine(MessagingHandler):
             return
         self._cancel(self._open_timer)
         self._online = True
+        self._refused_by.clear()
+        self._refused_since = None
         self._epoch += 1
         self._connected_url = self._attempts.url
         self._stable = False
@@ -452,9 +457,15 @@ class Engine(MessagingHandler):
         if condition is not None:
             reason = f"{reason}: {_describe(condition)}"
         if condition is not None and condition.name in _FATAL_CONDITIONS:
+            now = time.monotonic()
+            self._refused_by.add(self._attempts.url)
+            if self._refused_since is None:
+                self._refused_since = now
+            ever_connected = self._epoch > 0
             if refused_login_is_fatal(
-                ever_connected=self._epoch > 0,
-                elapsed=time.monotonic() - self._started,
+                ever_connected=ever_connected,
+                refused_by_every_node=self._refused_by >= set(self._urls),
+                elapsed=now - (self._refused_since if ever_connected else self._started),
                 retry_window=self._config.auth_retry_window,
             ):
                 self._fatal = AuthenticationFailed(_describe(condition))

@@ -14,7 +14,7 @@ from typing import Any
 from proton import SSL, Message
 
 from ._engine import Engine, EngineConfig, PendingSend, Received, Routing, Settlement, _Subscription
-from .errors import ArtemisError, ClientClosed, EngineFailed
+from .errors import ArtemisError, ClientClosed, EngineFailed, SendBacklogFull
 
 log = logging.getLogger("aioartemis")
 
@@ -187,14 +187,19 @@ class Client:
         reconnect_max: Cap of the backoff, in seconds. A connection must also
             stay up this long before the backoff resets.
         shuffle: Shuffle `urls` once per client, to spread clients over nodes.
-        auth_retry_window: Seconds after start during which a refused first login
-            is retried like an unreachable node, for brokers whose authentication
-            backend (LDAP, ...) refuses valid credentials while it restarts.
-            `None` raises `AuthenticationFailed` at the first refusal. Once
-            logged in, a refusal is always failed over.
+        auth_retry_window: Seconds during which refused credentials are retried
+            like an unreachable node, for brokers whose authentication backend
+            (LDAP, ...) refuses valid credentials while it restarts: counted from
+            the start before the first login, and after it from the first refusal
+            once every node has refused. `None` raises `AuthenticationFailed` at
+            the first refusal before a login, and once every node has refused
+            after it.
+        max_pending_sends: How many `send` calls may wait for the broker at
+            once, including those queued while no node is reachable. A send
+            beyond it raises `SendBacklogFull` at once. `None` removes the limit.
 
     Raises:
-        ValueError: `urls` is empty.
+        ValueError: `urls` is empty, or `max_pending_sends` is below 1.
         RuntimeError: An `amqps://` URL was given, but python-qpid-proton was built
             without OpenSSL.
     """
@@ -213,9 +218,12 @@ class Client:
         reconnect_max: float = 10.0,
         shuffle: bool = True,
         auth_retry_window: float | None = None,
+        max_pending_sends: int | None = 10_000,
     ) -> None:
         if not urls:
             raise ValueError("at least one url is required")
+        if max_pending_sends is not None and max_pending_sends < 1:
+            raise ValueError("max_pending_sends must be at least 1")
         if any(url.startswith("amqps://") for url in urls) and not SSL.present():
             # python-qpid-proton builds without TLS, silently, when the OpenSSL headers
             # are missing; amqps:// would otherwise fail later on the engine thread.
@@ -237,6 +245,8 @@ class Client:
         )
         self._shuffle = shuffle
         self._connect_timeout = connect_timeout
+        self._max_pending_sends = max_pending_sends
+        self._pending_sends = 0
         self._loop: asyncio.AbstractEventLoop | None = None
         self._engine: Engine | None = None
         self._thread: threading.Thread | None = None
@@ -347,10 +357,10 @@ class Client:
     ) -> Any:
         """Send a message and wait until the broker has accepted it.
 
-        While the client is reconnecting the message waits in a local queue, which
-        is not bounded; cancel the call (e.g. with `asyncio.timeout`) to give up on
-        it. A message already handed to the broker cannot be recalled by
-        cancelling.
+        While the client is reconnecting the message waits in a local queue of at
+        most `max_pending_sends` sends; cancel the call (e.g. with
+        `asyncio.timeout`) to give up on it. A message already handed to the
+        broker cannot be recalled by cancelling.
 
         Args:
             address: The Artemis address to send to.
@@ -371,13 +381,17 @@ class Client:
             ConnectionLost: The outcome is unknown; retry with the same id.
             SendRejected: The broker refused the message.
             SendReleased: The broker did not take the message; safe to resend.
+            SendBacklogFull: `max_pending_sends` sends are already waiting; this
+                one was not sent.
             LinkRefused: The broker refused the link for this address.
             ClientClosed: The client was closed.
-            AuthenticationFailed: The client failed to log in.
+            AuthenticationFailed: The credentials were refused by every node.
             EngineFailed: The engine thread died.
             TypeError: AMQP cannot encode the body.
         """
         engine = self._usable_engine()
+        if self._max_pending_sends is not None and self._pending_sends >= self._max_pending_sends:
+            raise SendBacklogFull(f"{self._pending_sends} sends are already waiting for the broker")
         message_id = message_id if message_id is not None else str(uuid.uuid4())
         message = Message(body=body, properties=properties, id=message_id, durable=durable)
         try:
@@ -388,6 +402,7 @@ class Client:
         outcome = _FutureOutcome(self)
         item = PendingSend(encoded, message_id, outcome)
         engine.submit(lambda: engine.send(address, routing, item), outcome)
+        self._pending_sends += 1
         try:
             return await outcome.future
         except asyncio.CancelledError:
@@ -395,6 +410,8 @@ class Client:
             with suppress(ArtemisError):
                 engine.submit(lambda: engine.forget(address, routing, item))
             raise
+        finally:
+            self._pending_sends -= 1
 
     @asynccontextmanager
     async def subscribe(

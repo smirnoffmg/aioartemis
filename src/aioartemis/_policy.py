@@ -18,11 +18,17 @@ def backoff_delay(round_: int, *, base: float, cap: float, rand: Callable[[], fl
     return rand() * min(cap, base * 2.0 ** min(round_, 64))
 
 
-def refused_login_is_fatal(*, ever_connected: bool, elapsed: float, retry_window: float | None) -> bool:
+def refused_login_is_fatal(
+    *, ever_connected: bool, refused_by_every_node: bool, elapsed: float, retry_window: float | None
+) -> bool:
     """A refused first login means wrong credentials, unless the application asked
     to ride out an authentication backend that refuses everyone for a while.
-    Once logged in, a node refusing us is a misconfigured node, failed over."""
-    if ever_connected:
+
+    Once logged in, a node refusing us is a misconfigured node, failed over, until
+    every node has refused since the last login: the credentials were revoked or
+    rotated, and retrying them forever would leave every send hanging. `elapsed`
+    counts from the start before the first login and from the first refusal after it."""
+    if ever_connected and not refused_by_every_node:
         return False
     return retry_window is None or elapsed >= retry_window
 
