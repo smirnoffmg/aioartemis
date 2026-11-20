@@ -85,6 +85,58 @@ All four raise `DeliveryLost` when the connection the message came over has drop
 then redelivers the message, so a consumer loop should carry on, as above, instead of letting the error
 end the subscription.
 
+## Litestar
+
+```bash
+pip install "aioartemis[litestar]"
+```
+
+`ArtemisPlugin` runs a client for the application's lifetime and injects it into handlers:
+
+```python
+from litestar import Litestar, post
+from litestar.di import NamedDependency
+
+from aioartemis import Client
+from aioartemis.litestar import ArtemisPlugin
+
+
+@post("/orders")
+async def create_order(data: dict[str, str], artemis: NamedDependency[Client]) -> None:
+    await artemis.send("orders", data, message_id=data["id"])
+
+
+app = Litestar(
+    route_handlers=[create_order],
+    plugins=[ArtemisPlugin(lambda: Client(["amqp://artemis-1:5672"], user="app", password="secret"))],
+)
+```
+
+The application does not start until a node is reachable. The client is also at `app.state.artemis`, for
+your own lifespans and `on_startup` hooks; the plugin's lifespan goes first, so lifespans declared by the
+application or by earlier plugins have the client on startup and while they shut down. `on_shutdown`
+hooks run after the lifespans and find it closed.
+
+| Raised from a handler | Response |
+| --- | --- |
+| `ConnectionLost`, `SendReleased`, `SendBacklogFull`, `ClientClosed` (during shutdown) | `503`, `Retry-After: 1`; for `ConnectionLost`, the `message_id` to retry with |
+| `SendRejected`, `LinkRefused`, `AuthenticationFailed`, `EngineFailed` | left to the application: `500` by default |
+
+A retry can cure the first group, not the second, which is a bug or misconfiguration. The `503` body names
+no broker address; the cause is logged as a warning on the `aioartemis.litestar` logger. Litestar logs
+unhandled exceptions only in debug mode unless `log_exceptions="always"` is set in its logging config, so
+set it to see the causes of `500`s. The `message_id` helps only a caller that chose it, as the order id in
+the example below does.
+
+The plugin skips an error the application already handles at the application level, by its class or a
+base class such as `ArtemisError`; handlers for `Exception` or `500` do not count. It cannot see handlers
+on routers and controllers: to handle broker errors there, pass `exception_handlers=False`. A dependency
+already named `artemis` is an error; pass another `key`.
+
+[litestar_plugin.py](https://github.com/smirnoffmg/aioartemis/tree/main/examples/litestar_plugin.py) is
+a complete application, and [litestar_app.py](https://github.com/smirnoffmg/aioartemis/tree/main/examples/litestar_app.py)
+the same one wired by hand.
+
 ## Next
 
 - [Delivery guarantees](guarantees.md): duplicates, ordering and what each call promises.

@@ -8,8 +8,11 @@
   undetectable copy.
 - A background consumer starts and stops with the application.
 - `GET /health` is a readiness probe that reports why the broker is unreachable.
-- Broker failures become `503 Service Unavailable`; an ambiguous send also tells
-  the caller which message id to retry with.
+- Broker errors a retry can cure become `503 Service Unavailable` with
+  `Retry-After`, and are logged; an ambiguous send also tells the caller which
+  message id to retry with. The rest (a refused message, refused credentials)
+  are bugs or misconfiguration, and stay `500`.
+- `litestar_plugin.py` is the same application, wired by `ArtemisPlugin`.
 
 Run it with `uv run python examples/litestar_app.py`, then:
 
@@ -20,6 +23,7 @@ Run it with `uv run python examples/litestar_app.py`, then:
 """
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
@@ -33,13 +37,23 @@ from litestar.exceptions import NotFoundException
 from litestar.params import FromPath, JSONBody
 from litestar.status_codes import HTTP_202_ACCEPTED, HTTP_503_SERVICE_UNAVAILABLE
 
-from aioartemis import ArtemisError, Client, ConnectionLost, DeliveryLost
+from aioartemis import (
+    ArtemisError,
+    Client,
+    ClientClosed,
+    ConnectionLost,
+    DeliveryLost,
+    SendBacklogFull,
+    SendReleased,
+)
 
 URLS = os.environ.get("ARTEMIS_URLS", "amqp://localhost:5672,amqp://localhost:5673").split(",")
 USER = os.environ.get("ARTEMIS_USER", "artemis")
 PASSWORD = os.environ.get("ARTEMIS_PASSWORD", "artemis")
 
 ORDERS = "examples.litestar.orders"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -102,9 +116,14 @@ async def health(artemis: NamedDependency[Client]) -> Response[dict[str, Any]]:
     )
 
 
-def outcome_unknown(request: Request[Any, Any, Any], exc: ConnectionLost) -> Response[dict[str, Any]]:
-    body = {"detail": "the broker may or may not have the message; retry", "message_id": exc.message_id}
-    return Response(body, status_code=HTTP_503_SERVICE_UNAVAILABLE)
+def broker_unavailable(request: Request[Any, Any, Any], exc: ArtemisError) -> Response[dict[str, Any]]:
+    # The cause goes to the log, not to the caller: it names broker addresses.
+    log.warning("%s %s: %s: %s", request.method, request.url.path, type(exc).__name__, exc)
+    body: dict[str, Any] = {"detail": "the message broker is unavailable; retry"}
+    if isinstance(exc, ConnectionLost):
+        body["detail"] = "the message broker may or may not have the message; retry with its message_id"
+        body["message_id"] = exc.message_id
+    return Response(body, status_code=HTTP_503_SERVICE_UNAVAILABLE, headers={"Retry-After": "1"})
 
 
 def broker_timed_out(request: Request[Any, Any, Any], exc: TimeoutError) -> Response[dict[str, Any]]:
@@ -112,19 +131,13 @@ def broker_timed_out(request: Request[Any, Any, Any], exc: TimeoutError) -> Resp
     return Response(body, status_code=HTTP_503_SERVICE_UNAVAILABLE)
 
 
-def broker_unavailable(request: Request[Any, Any, Any], exc: ArtemisError) -> Response[dict[str, Any]]:
-    return Response(
-        {"detail": f"message broker unavailable: {exc}"}, status_code=HTTP_503_SERVICE_UNAVAILABLE
-    )
-
-
 app = Litestar(
     route_handlers=[create_order, get_order, health],
     lifespan=[artemis_lifespan],
     dependencies={"artemis": Provide(provide_artemis, sync_to_thread=False)},
     exception_handlers={
-        ConnectionLost: outcome_unknown,
-        ArtemisError: broker_unavailable,
+        # ClientClosed: the client is closed only on shutdown; another instance can serve.
+        **dict.fromkeys([ConnectionLost, SendReleased, SendBacklogFull, ClientClosed], broker_unavailable),
         TimeoutError: broker_timed_out,
     },
 )

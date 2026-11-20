@@ -80,9 +80,10 @@ def test_topic_fanout(node_b: Node) -> None:
     assert output.count("analytics got") == 3
 
 
-async def test_litestar_app(node_b: Node, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("script", ["litestar_app.py", "litestar_plugin.py"])
+async def test_litestar_app(script: str, node_b: Node, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ARTEMIS_URLS", node_b.url)
-    spec = importlib.util.spec_from_file_location("litestar_app", EXAMPLES / "litestar_app.py")
+    spec = importlib.util.spec_from_file_location(Path(script).stem, EXAMPLES / script)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

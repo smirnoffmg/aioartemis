@@ -15,7 +15,8 @@ uv run python examples/send_and_receive.py
 | [graceful_shutdown.py](graceful_shutdown.py) | Stopping on Ctrl+C or SIGTERM and `release()`ing the message in progress |
 | [failover.py](failover.py) | Moving between nodes while you stop and start them |
 | [topic_fanout.py](topic_fanout.py) | `routing="topic"`: every subscription gets every message |
-| [litestar_app.py](litestar_app.py) | A Litestar app: the client in the lifespan and injected into handlers, a background consumer, a readiness probe, broker errors as `503` |
+| [litestar_app.py](litestar_app.py) | A Litestar app wired by hand: the client in the lifespan and injected into handlers, a background consumer, a readiness probe, broker errors as `503` |
+| [litestar_plugin.py](litestar_plugin.py) | The same app with `ArtemisPlugin` from `aioartemis[litestar]` doing the wiring |
 
 The scripts connect to `amqp://localhost:5672,amqp://localhost:5673` as `artemis`/`artemis`; override with
 `ARTEMIS_URLS` (comma-separated), `ARTEMIS_USER` and `ARTEMIS_PASSWORD`.

@@ -57,6 +57,10 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+For Litestar, `pip install "aioartemis[litestar]"` adds `ArtemisPlugin`, which runs the client for the
+application's lifetime, injects it into handlers and answers broker errors a retry can cure with `503`; see
+[Litestar](https://smirnoffmg.dev/aioartemis/#litestar).
+
 ## Documentation
 
 <https://smirnoffmg.dev/aioartemis/>
@@ -71,7 +75,7 @@ asyncio.run(main())
 ## Examples
 
 [examples/](https://github.com/smirnoffmg/aioartemis/tree/main/examples) has runnable scripts for retrying ambiguous sends, an idempotent consumer, graceful
-shutdown, failover and topics, with a Docker Compose file for two local nodes.
+shutdown, failover, topics and Litestar applications, with a Docker Compose file for two local nodes.
 
 ## License
 

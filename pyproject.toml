@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Maksim Smirnov", email = "smirnoffmg@gmail.com" }]
-keywords = ["activemq", "artemis", "amqp", "amqp-1.0", "asyncio", "messaging", "qpid-proton"]
+keywords = ["activemq", "artemis", "amqp", "amqp-1.0", "asyncio", "litestar", "messaging", "qpid-proton"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: AsyncIO",
@@ -25,6 +25,9 @@ classifiers = [
 dependencies = [
     "python-qpid-proton>=0.41.1",
 ]
+
+[project.optional-dependencies]
+litestar = ["litestar>=2.23"]  # the oldest the tests pass on; CI checks it
 
 [project.urls]
 Homepage = "https://github.com/smirnoffmg/aioartemis"
@@ -102,6 +105,7 @@ include_external_packages = true
 name = "asyncio API is built on top of the proton engine, never the other way round"
 type = "layers"
 layers = [
+    "aioartemis.litestar",
     "aioartemis.client",
     "aioartemis._engine",
     "aioartemis._policy | aioartemis.errors",
@@ -114,6 +118,13 @@ name = "proton engine does not use asyncio"
 type = "forbidden"
 source_modules = ["aioartemis._engine"]
 forbidden_modules = ["asyncio"]
+
+[[tool.importlinter.contracts]]
+# litestar is an optional extra: only aioartemis.litestar may import it.
+name = "only the Litestar integration imports litestar"
+type = "forbidden"
+source_modules = ["aioartemis.client", "aioartemis._engine", "aioartemis._policy", "aioartemis.errors"]
+forbidden_modules = ["litestar"]
 
 [tool.pyright]
 # mypy is the main type checker; pyright runs alongside it because it ships a
